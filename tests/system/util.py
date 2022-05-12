@@ -1,6 +1,8 @@
 import copy
 import cProfile
+import linecache
 import os
+import tracemalloc
 from typing import Any, Callable, Dict, List, Type
 from unittest.mock import MagicMock, Mock, patch
 
@@ -155,3 +157,42 @@ class CountDatastoreCalls:
     @property
     def calls(self) -> int:
         return sum(mock.call_count for mock in self.mocks)
+
+
+class MemoryProfiler:
+    """Helper class to profile the memory for a block of code.
+    Use as context manager and provide filename to save
+    the output to."""
+
+    def __init__(
+        self, filename: str, limit: int = 30, key_type: str = "lineno"
+    ) -> None:
+        self.filename = filename
+        self.limit = limit
+        self.key_type = key_type
+
+    def __enter__(self) -> None:
+        tracemalloc.start()
+
+    def __exit__(self, *args: Any, **kwargs: Any) -> None:
+        snapshot = tracemalloc.take_snapshot()
+        top_stats = snapshot.statistics(self.key_type)
+
+        with open(self.filename, "w", encoding="utf-8") as f:
+            f.write(f"Top {self.limit} lines\n===================\n")
+            for index, stat in enumerate(top_stats[: self.limit], 1):
+                frame = stat.traceback[0]
+                f.write(
+                    "#%s: %s:%s: %.1f KiB\n"
+                    % (index, frame.filename, frame.lineno, stat.size / 1024)
+                )
+                line = linecache.getline(frame.filename, frame.lineno).strip()
+                if line:
+                    f.write("    %s\n" % line)
+
+            other = top_stats[self.limit :]
+            if other:
+                size = sum(stat.size for stat in other)
+                f.write("%s other: %.1f KiB\n" % (len(other), size / 1024))
+            total = sum(stat.size for stat in top_stats)
+            f.write("Total allocated size: %.1f KiB\n" % (total / 1024))

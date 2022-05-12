@@ -2,11 +2,13 @@ import base64
 import time
 from typing import Any, Dict, List, cast
 
+import pytest
+
 from migrations import get_backend_migration_index
 from openslides_backend.models.models import Meeting
 from openslides_backend.shared.util import get_initial_data_file
 from tests.system.action.base import BaseActionTestCase
-from tests.system.util import CountDatastoreCalls, Profiler, performance
+from tests.system.util import CountDatastoreCalls, MemoryProfiler, Profiler, performance
 
 current_migration_index = get_backend_migration_index()
 
@@ -1374,10 +1376,21 @@ class MeetingImport(BaseActionTestCase):
         self.assert_model_exists("projector/2", {"sequential_number": 1})
 
     @performance
-    def test_big_file(self) -> None:
+    def test_big_file_performance(self) -> None:
         data = {}
         data["meeting"] = get_initial_data_file("global/data/put_your_file.json")
         data["committee_id"] = 1
         with Profiler("test_meeting_import_performance.prof"):
+            response = self.request("meeting.import", data)
+        self.assert_status_code(response, 200)
+
+    @pytest.mark.skip()
+    def test_file_memory(self) -> None:
+        data = {}
+        data["meeting"] = get_initial_data_file("global/data/put_your_file_here.json")
+        data["committee_id"] = 1
+        with MemoryProfiler(
+            "test_meeting_import_memory.txt", limit=30, key_type="lineno"
+        ):
             response = self.request("meeting.import", data)
         self.assert_status_code(response, 200)
